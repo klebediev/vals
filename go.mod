@@ -1,4 +1,4 @@
-module github.com/variantdev/vals
+module github.com/klebediev/vals
 
 go 1.12
 
