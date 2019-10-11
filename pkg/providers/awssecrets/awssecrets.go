@@ -3,7 +3,7 @@ package awssecrets
 import (
 	"errors"
 	"fmt"
-	"github.com/variantdev/vals/pkg/api"
+	"github.com/klebediev/vals/pkg/api"
 	"gopkg.in/yaml.v3"
 	"os"
 	"strings"
@@ -99,7 +99,7 @@ func (p *provider) GetStringMap(key string) (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	metaKeysField := "github.com/variantdev/vals"
+	metaKeysField := "github.com/klebediev/vals"
 	f, ok := meta[metaKeysField]
 	if !ok {
 		return nil, fmt.Errorf("%q not found", metaKeysField)

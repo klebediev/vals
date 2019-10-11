@@ -2,7 +2,7 @@ package vault
 
 import (
 	"fmt"
-	"github.com/variantdev/vals/pkg/api"
+	"github.com/klebediev/vals/pkg/api"
 	"io/ioutil"
 	"os"
 	"strings"

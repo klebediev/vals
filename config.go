@@ -2,7 +2,7 @@ package vals
 
 import (
 	"fmt"
-	"github.com/variantdev/vals/pkg/api"
+	"github.com/klebediev/vals/pkg/api"
 )
 
 type mapConfig struct {

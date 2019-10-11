@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/variantdev/vals"
+	"github.com/klebediev/vals"
 	"gopkg.in/yaml.v3"
 	"os"
 )

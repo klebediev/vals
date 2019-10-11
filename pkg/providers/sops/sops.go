@@ -2,7 +2,7 @@ package sops
 
 import (
 	"fmt"
-	"github.com/variantdev/vals/pkg/api"
+	"github.com/klebediev/vals/pkg/api"
 	"gopkg.in/yaml.v3"
 	"os"
 	"strings"
