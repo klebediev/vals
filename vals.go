@@ -13,6 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 	"net/url"
 	"strings"
+
+	lru "github.com/hashicorp/golang-lru"
 )
 
 const (
@@ -34,38 +36,37 @@ const (
 	KeySetForKey  = "setForKeys"
 	KeySet        = "set"
 	KeyValuesFrom = "valuesFrom"
+
+	// secret cache size
+	cacheSize = 256
 )
 
-func cloneMap(m map[string]interface{}) map[string]interface{} {
-	bs, err := yaml.Marshal(m)
-	if err != nil {
-		panic(err)
-	}
-	out := map[string]interface{}{}
-	if err := yaml.Unmarshal(bs, &out); err != nil {
-		panic(err)
-	}
-	return out
+type Evaluator interface {
+	Eval(map[string]interface{}) (map[string]interface{}, error)
 }
 
-var KnownValuesTypes = []string{"vault", "ssm", "awssecrets"}
-
-type ctx struct {
-	ignorePrefix string
+type EvalRenderer struct {
+	providers map[string]api.Provider
+	cache     *lru.Cache // secrets are cached to improve performance
 }
 
-type Option func(*ctx)
-
-func IgnorePrefix(p string) Option {
-	return func(ctx *ctx) {
-		ctx.ignorePrefix = p
+// NewEvalRenderer returns an instance of EvalRenderer
+func NewEvalRenderer(cacheSize int) (*EvalRenderer, error) {
+	evalRenderer := &EvalRenderer{
+		providers: map[string]api.Provider{},
 	}
-}
 
-func Eval(template map[string]interface{}) (map[string]interface{}, error) {
 	var err error
+	evalRenderer.cache, err = lru.New(cacheSize)
+	if err != nil {
+		return nil, err
+	}
+	return evalRenderer, nil
+}
 
-	providers := map[string]api.Provider{}
+// Eval replaces 'ref+<provider>://xxxxx' entries by their actual values
+func (e *EvalRenderer) Eval(template map[string]interface{}) (map[string]interface{}, error) {
+	var err error
 
 	uriToProviderHash := func(uri *url.URL) string {
 		bs := []byte{}
@@ -115,13 +116,21 @@ func Eval(template map[string]interface{}) (map[string]interface{}, error) {
 	expand := expansion.ExpandRegexMatch{
 		Target: expansion.DefaultRefRegexp,
 		Lookup: func(key string) (string, error) {
+			if val, ok := e.cache.Get(key); ok {
+				valStr, ok := val.(string)
+				if !ok {
+					return "", fmt.Errorf("error reading from cache: unsupported value type %T", val)
+				}
+				return valStr, nil
+			}
+
 			uri, err := url.Parse(key)
 			if err != nil {
 				return "", err
 			}
 
 			hash := uriToProviderHash(uri)
-			p, ok := providers[hash]
+			p, ok := e.providers[hash]
 			if !ok {
 				var scheme string
 				scheme = uri.Scheme
@@ -132,7 +141,7 @@ func Eval(template map[string]interface{}) (map[string]interface{}, error) {
 					return "", err
 				}
 
-				providers[hash] = p
+				e.providers[hash] = p
 			}
 
 			var frag string
@@ -161,6 +170,7 @@ func Eval(template map[string]interface{}) (map[string]interface{}, error) {
 						if i != len(keys)-1 {
 							return "", fmt.Errorf("unexpected type of value for key at %d=%s in %v: expected map[string]interface{}, got %v(%T)", i, k, keys, t, t)
 						}
+						e.cache.ContainsOrAdd(key, t)
 						return t, nil
 					case map[string]interface{}:
 						newobj = t
@@ -183,6 +193,40 @@ func Eval(template map[string]interface{}) (map[string]interface{}, error) {
 	}
 
 	return ret, nil
+}
+
+func cloneMap(m map[string]interface{}) map[string]interface{} {
+	bs, err := yaml.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+	out := map[string]interface{}{}
+	if err := yaml.Unmarshal(bs, &out); err != nil {
+		panic(err)
+	}
+	return out
+}
+
+var KnownValuesTypes = []string{"vault", "ssm", "awssecrets"}
+
+type ctx struct {
+	ignorePrefix string
+}
+
+type Option func(*ctx)
+
+func IgnorePrefix(p string) Option {
+	return func(ctx *ctx) {
+		ctx.ignorePrefix = p
+	}
+}
+
+func Eval(template map[string]interface{}) (map[string]interface{}, error) {
+	evalRenderer, err := NewEvalRenderer(cacheSize)
+	if err != nil {
+		return nil, err
+	}
+	return evalRenderer.Eval(template)
 }
 
 func Load(config api.StaticConfig, opt ...Option) (map[string]interface{}, error) {
